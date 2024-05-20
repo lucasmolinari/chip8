@@ -73,15 +73,25 @@ impl Chip8 {
     pub fn execute(&mut self) -> Result<(), String> {
         let instruction = (self.opcode & 0xF000);
         match instruction {
-            0 => todo!(),
-            0x00E0 => self.display.fill(0),           // CLS
+            0x0000 => {
+                match self.opcode & 0x000F {
+                    0x0000 => self.display.fill(0), // CLS
+                    0x000E => todo!(),              // RET
+                    _ => return Err(format!("Unknow Instruction: {}", instruction)),
+                }
+            }
             0x1000 => self.pc = self.opcode & 0x0FFF, // JP
             0x6000 => {
-                // LD Vx, byte
-                let reg = (self.opcode & 0xF000) << 12;
-                let value = (self.opcode & 0x00FF) << 8;
-                self.registers[reg as usize] = value as u8;
+                let reg = (self.opcode & 0x0F00) >> 8; // Vx
+                let val = self.opcode & 0x00FF; // byte
+                self.registers[reg as usize] = val as u8; // LD Vx
             }
+            0x7000 => {
+                let reg = (self.opcode & 0x0F00) >> 8; // Vx
+                let val = self.opcode & 0x00FF; // byte
+                self.registers[reg as usize] += val as u8; // ADD Vx
+            }
+            0xD000 => self.display(),                // Dxyn
             0xA000 => self.i = self.opcode & 0x0FFF, // LD I, addr
             _ => return Err(format!("Unknow Instruction: {}", instruction)),
         }
@@ -91,5 +101,33 @@ impl Chip8 {
 
     fn increment_pc(&mut self) {
         self.pc += 2
+    }
+
+    fn display(&mut self) {
+        self.registers[0xF] = 0; // VF
+        let xx = (self.opcode & 0x0F00) >> 8; // Vx Adress
+        let yy = (self.opcode & 0x00F0) >> 4; // Vy Adress
+        let n = self.opcode & 0x000F; // Height
+
+        let x = self.registers[xx as usize];
+        let y = self.registers[yy as usize];
+
+        for yline in 0..n {
+            let pixel = self.mem[(self.i + yline) as usize];
+            for xline in 0..8 {
+                let msb = 0x80;
+
+                if (pixel & (msb >> xline)) != 0 {
+                    let ax = (x + xline) % 64;
+                    let ay = (y as u16 + yline) % 32;
+                    let i = (ax as u16 + ay * 64) as usize;
+
+                    self.display[i] ^= 1;
+                    if self.display[i] == 0 {
+                        self.registers[0xF] = 1;
+                    }
+                }
+            }
+        }
     }
 }

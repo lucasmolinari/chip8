@@ -1,5 +1,10 @@
 #![allow(unused)]
 
+use std::{
+    fs::{self, File},
+    path::PathBuf,
+};
+
 const FONTSET: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -19,7 +24,7 @@ const FONTSET: [u8; 80] = [
     0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 ];
 
-struct Chip8 {
+pub struct Chip8 {
     opcode: u16, // Operation Code
     i: u16,      // Index Register
     pc: u16,     // Program Counter
@@ -34,7 +39,7 @@ struct Chip8 {
 }
 impl Chip8 {
     pub fn new() -> Self {
-        Chip8 {
+        let mut chip = Chip8 {
             opcode: 0,
             i: 0,
             pc: 0x200,
@@ -46,25 +51,34 @@ impl Chip8 {
             registers: [0; 16],
             stack: [0; 16],
             keys: [0; 16],
-        }
+        };
+        chip.mem[..80].copy_from_slice(&FONTSET);
+
+        chip
     }
 
-    pub fn load(&mut self) -> Result<(), String> {
-        // Load program into memory
-        todo!()
+    pub fn get_display(&self) -> &[u8; 64 * 32] {
+        &self.display
+    }
+
+    pub fn load(&mut self, path: PathBuf) -> Result<(), String> {
+        let data = fs::read(path).map_err(|e| e.to_string())?;
+        self.mem[0x200..0x200 + data.len()].copy_from_slice(&data);
+
+        Ok(())
     }
 
     pub fn fetch(&mut self) -> Result<(), String> {
-        let first = self
+        let first = *self
             .mem
             .get(self.pc as usize)
-            .ok_or("Failed to fetch first byte.")?;
-        let second = self
+            .ok_or("Failed to fetch first byte.")? as u16;
+        let second = *self
             .mem
             .get(1 + self.pc as usize)
-            .ok_or("Failed to fetch second byte.")?;
+            .ok_or("Failed to fetch second byte.")? as u16;
 
-        self.opcode = ((first << 8) | second) as u16;
+        self.opcode = (first << 8) | second;
         self.increment_pc();
 
         Ok(())
@@ -95,12 +109,8 @@ impl Chip8 {
             0xA000 => self.i = self.opcode & 0x0FFF, // LD I, addr
             _ => return Err(format!("Unknow Instruction: {}", instruction)),
         }
-        // todo: Handle Timers
+        self.tick();
         Ok(())
-    }
-
-    fn increment_pc(&mut self) {
-        self.pc += 2
     }
 
     fn display(&mut self) {
@@ -129,5 +139,19 @@ impl Chip8 {
                 }
             }
         }
+    }
+
+    fn tick(&mut self) {
+        if self.dt != 0 {
+            self.dt -= 1;
+        }
+        if self.st != 0 {
+            self.st -= 1;
+            println!("Beep");
+        }
+    }
+
+    fn increment_pc(&mut self) {
+        self.pc += 2
     }
 }

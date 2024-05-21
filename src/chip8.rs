@@ -1,9 +1,9 @@
-#![allow(unused)]
-
 use std::{
-    fs::{self, File},
+    fs::{self},
     path::PathBuf,
 };
+
+use rand::Rng;
 
 const FONTSET: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -24,6 +24,8 @@ const FONTSET: [u8; 80] = [
     0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 ];
 
+const FLAG: usize = 0xF;
+
 pub struct Chip8 {
     opcode: u16, // Operation Code
     i: u16,      // Index Register
@@ -35,6 +37,7 @@ pub struct Chip8 {
     display: [u8; 64 * 32],
     registers: [u8; 16],
     stack: [u16; 16],
+    #[allow(dead_code)]
     keys: [u8; 16],
 }
 impl Chip8 {
@@ -85,42 +88,181 @@ impl Chip8 {
     }
 
     pub fn execute(&mut self) -> Result<(), String> {
-        let instruction = (self.opcode & 0xF000);
+        let instruction = self.opcode & 0xF000;
+        let vx = ((self.opcode & 0x0F00) >> 8) as usize;
+        let vy = ((self.opcode & 0x00F0) >> 4) as usize;
         match instruction {
             0x0000 => {
                 match self.opcode & 0x000F {
-                    0x0000 => self.display.fill(0), // CLS
-                    0x000E => todo!(),              // RET
+                    // CLS
+                    0x0 => self.display.fill(0),
+                    // RET
+                    0xE => {
+                        self.pc = self.stack[self.sp as usize];
+                        self.sp -= 1;
+                    }
                     _ => return Err(format!("Unknow Instruction: {}", instruction)),
                 }
             }
-            0x1000 => self.pc = self.opcode & 0x0FFF, // JP
+            // JMP addr
+            0x1000 => self.pc = self.opcode & 0x0FFF,
+            // CALL addr
+            0x2000 => {
+                self.sp += 1;
+                self.stack[self.sp as usize] = self.pc;
+                self.pc = self.opcode & 0x0FFF;
+            }
+            // SE Vx, byte
+            0x3000 => {
+                let byte = (self.opcode & 0x00FF) as u8;
+                if self.registers[vx] == byte {
+                    self.increment_pc();
+                }
+            }
+            // SNE Vx, byte
+            0x4000 => {
+                let byte = (self.opcode & 0x00FF) as u8;
+                if self.registers[vx] != byte {
+                    self.increment_pc();
+                }
+            }
+            // SE Vx, Vy
+            0x5000 => {
+                if self.registers[vx] == self.registers[vy] {
+                    self.increment_pc();
+                }
+            }
+            // LD Vx, byte
             0x6000 => {
-                let reg = (self.opcode & 0x0F00) >> 8; // Vx
-                let val = self.opcode & 0x00FF; // byte
-                self.registers[reg as usize] = val as u8; // LD Vx
+                let byte = self.opcode & 0x00FF;
+                self.registers[vx] = byte as u8;
             }
+            // ADD Vx, byte
             0x7000 => {
-                let reg = (self.opcode & 0x0F00) >> 8; // Vx
-                let val = self.opcode & 0x00FF; // byte
-                self.registers[reg as usize] += val as u8; // ADD Vx
+                let val = self.opcode & 0x00FF;
+                self.registers[vx] += val as u8;
             }
-            0xD000 => self.display(),                // Dxyn
-            0xA000 => self.i = self.opcode & 0x0FFF, // LD I, addr
+            0x8000 => self.handle_8xy()?,
+            // SNE Vx, Vy
+            0x9000 => {
+                if self.registers[vx] != self.registers[vy] {
+                    self.increment_pc();
+                }
+            }
+            // LD I, addr
+            0xA000 => self.i = self.opcode & 0x0FFF,
+            // JMP V0, addr
+            0xB000 => self.pc = self.registers[0] as u16 + (self.opcode & 0x0FFF),
+            // RND Vx, byte
+            0xC000 => {
+                let rnd = rand::thread_rng().gen_range(0..256) as u8;
+                self.registers[vx] = rnd & (self.opcode & 0x00FF) as u8;
+            }
+            // DRW Vx, Vy, nibble
+            0xD000 => self.display(),
+            0xE => match self.opcode & 0x000F {
+                // SKP Vx
+                0xE => todo!(),
+                // SKNP Vx
+                0x1 => todo!(),
+                _ => return Err(format!("Unknow Instruction: {}", instruction)),
+            },
+            0xF => self.handle_fx()?,
             _ => return Err(format!("Unknow Instruction: {}", instruction)),
         }
-        self.tick();
+        self.timers();
+        Ok(())
+    }
+
+    fn handle_8xy(&mut self) -> Result<(), String> {
+        let instruction = self.opcode & 0x000F;
+        let vx = ((self.opcode & 0x0F00) >> 8) as usize;
+        let vy = ((self.opcode & 0x00F0) >> 4) as usize;
+        let x = self.registers[vx as usize];
+        let y = self.registers[vy as usize];
+        match instruction {
+            // LD Vx Vy
+            0x0 => {
+                self.registers[vx] = self.registers[vy];
+            }
+            // OR Vx Vy
+            0x1 => {
+                self.registers[vx] |= self.registers[vy];
+            }
+            // AND Vx Vy
+            0x2 => {
+                self.registers[vx] &= self.registers[vy];
+            }
+            // XOR Vx Vy
+            0x3 => {
+                self.registers[vx] ^= self.registers[vy];
+            }
+            // ADD Vx Vy
+            0x4 => {
+                let (r, c) = x.overflowing_add(y);
+                self.registers[vx] = r;
+                self.registers[FLAG] = c as u8;
+            }
+            // SUB Vx, Vy
+            0x5 => {
+                self.registers[FLAG] = (x > y) as u8;
+                self.registers[vx] = x.wrapping_sub(y);
+            }
+            // SHR Vx {, Vy}
+            0x6 => {
+                self.registers[FLAG] = x & 1; // lsb
+                self.registers[vx] >>= 1;
+            }
+            // SUBN Vx, Vy
+            0x7 => {
+                self.registers[FLAG] = (y > x) as u8;
+                self.registers[vx] = y.wrapping_sub(x);
+            }
+            // SHL Vx {, Vy}
+            0xE => {
+                self.registers[FLAG] = (x >> 7) & 1; // msb
+                self.registers[vx] <<= 1;
+            }
+            _ => return Err(format!("Unknow Instruction: 8xy{}", instruction)),
+        }
+        Ok(())
+    }
+
+    fn handle_fx(&mut self) -> Result<(), String> {
+        let instruction = self.opcode & 0x00FF;
+        let vx = ((self.opcode & 0x0F00) >> 8) as usize;
+        match instruction {
+            // LD Vx, DT
+            0x07 => self.registers[vx] = self.dt,
+            // LD Vx, K
+            0x0A => todo!(),
+            // LD DT, Vx
+            0x15 => self.dt = self.registers[vx],
+            // LD ST, Vx
+            0x18 => self.st = self.registers[vx],
+            // ADD I, Vx
+            0x1E => self.i += self.registers[vx] as u16,
+            // LD F, Vx
+            0x29 => todo!(),
+            // LD B, Vx
+            0x33 => todo!(),
+            // LD [I], Vx
+            0x55 => todo!(),
+            // LD Vx, [I]
+            0x65 => todo!(),
+            _ => return Err(format!("Unknow Instruction: 8xy{}", instruction)),
+        };
         Ok(())
     }
 
     fn display(&mut self) {
-        self.registers[0xF] = 0; // VF
-        let xx = (self.opcode & 0x0F00) >> 8; // Vx Adress
-        let yy = (self.opcode & 0x00F0) >> 4; // Vy Adress
+        self.registers[FLAG] = 0;
+        let vx = (self.opcode & 0x0F00) >> 8; // Vx Adress
+        let vy = (self.opcode & 0x00F0) >> 4; // Vy Adress
         let n = self.opcode & 0x000F; // Height
 
-        let x = self.registers[xx as usize];
-        let y = self.registers[yy as usize];
+        let x = self.registers[vx as usize];
+        let y = self.registers[vy as usize];
 
         for yline in 0..n {
             let pixel = self.mem[(self.i + yline) as usize];
@@ -141,13 +283,15 @@ impl Chip8 {
         }
     }
 
-    fn tick(&mut self) {
+    fn timers(&mut self) {
         if self.dt != 0 {
             self.dt -= 1;
         }
         if self.st != 0 {
+            if self.st == 1 {
+                println!("Beep");
+            }
             self.st -= 1;
-            println!("Beep");
         }
     }
 

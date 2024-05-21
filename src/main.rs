@@ -16,6 +16,7 @@ const SCALE: u32 = 16;
 
 pub fn main() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
+    if args.len() != 2 {}
     let path = args.get(1).ok_or("Expected a file path")?;
     let pb = Path::new(path).canonicalize().map_err(|e| e.to_string())?;
 
@@ -52,7 +53,6 @@ pub fn main() -> Result<(), String> {
         draw(&chip8, &mut canvas)?;
         ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
     }
-    canvas.present();
     Ok(())
 }
 

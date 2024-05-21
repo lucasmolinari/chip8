@@ -37,7 +37,6 @@ pub struct Chip8 {
     display: [u8; 64 * 32],
     registers: [u8; 16],
     stack: [u16; 16],
-    #[allow(dead_code)]
     keys: [u8; 16],
 }
 impl Chip8 {
@@ -101,7 +100,7 @@ impl Chip8 {
                         self.pc = self.stack[self.sp as usize];
                         self.sp -= 1;
                     }
-                    _ => return Err(format!("Unknow Instruction: {}", instruction)),
+                    _ => return Err(format!("Unknow Instruction: {:X}", self.opcode)),
                 }
             }
             // JMP addr
@@ -139,8 +138,8 @@ impl Chip8 {
             }
             // ADD Vx, byte
             0x7000 => {
-                let val = self.opcode & 0x00FF;
-                self.registers[vx] += val as u8;
+                let val = (self.opcode & 0x00FF) as u8;
+                self.registers[vx] = self.registers[vx].wrapping_add(val);
             }
             0x8000 => self.handle_8xy()?,
             // SNE Vx, Vy
@@ -160,15 +159,25 @@ impl Chip8 {
             }
             // DRW Vx, Vy, nibble
             0xD000 => self.display(),
-            0xE => match self.opcode & 0x000F {
+            0xE000 => match self.opcode & 0x00FF {
                 // SKP Vx
-                0xE => todo!(),
+                0x9E => {
+                    let x = self.registers[vx];
+                    if self.keys[x as usize] == 1 {
+                        self.increment_pc()
+                    }
+                }
                 // SKNP Vx
-                0x1 => todo!(),
-                _ => return Err(format!("Unknow Instruction: {}", instruction)),
+                0xA1 => {
+                    let x = self.registers[vx];
+                    if self.keys[x as usize] == 0 {
+                        self.increment_pc()
+                    }
+                }
+                _ => return Err(format!("Unknow Instruction: {:X}", self.opcode)),
             },
-            0xF => self.handle_fx()?,
-            _ => return Err(format!("Unknow Instruction: {}", instruction)),
+            0xF000 => self.handle_fx()?,
+            _ => return Err(format!("Unknow Instruction:  {:X}", self.opcode)),
         }
         self.timers();
         Ok(())
@@ -223,7 +232,7 @@ impl Chip8 {
                 self.registers[FLAG] = (x >> 7) & 1; // msb
                 self.registers[vx] <<= 1;
             }
-            _ => return Err(format!("Unknow Instruction: 8xy{}", instruction)),
+            _ => return Err(format!("Unknow Instruction: {:X}", self.opcode)),
         }
         Ok(())
     }
@@ -235,7 +244,14 @@ impl Chip8 {
             // LD Vx, DT
             0x07 => self.registers[vx] = self.dt,
             // LD Vx, K
-            0x0A => todo!(),
+            0x0A => loop {
+                for key in self.keys {
+                    if key != 0 {
+                        self.registers[vx] = key;
+                        break;
+                    }
+                }
+            },
             // LD DT, Vx
             0x15 => self.dt = self.registers[vx],
             // LD ST, Vx
@@ -243,14 +259,26 @@ impl Chip8 {
             // ADD I, Vx
             0x1E => self.i += self.registers[vx] as u16,
             // LD F, Vx
-            0x29 => todo!(),
+            0x29 => self.i = self.registers[vx] as u16 * 5,
             // LD B, Vx
-            0x33 => todo!(),
+            0x33 => {
+                self.mem[self.i as usize] = self.registers[vx] / 100;
+                self.mem[1 + self.i as usize] = (self.registers[vx] / 10) % 10;
+                self.mem[2 + self.i as usize] = self.registers[vx] % 10;
+            }
             // LD [I], Vx
-            0x55 => todo!(),
+            0x55 => {
+                for i in 0..=vx {
+                    self.mem[i + self.i as usize] = self.registers[i];
+                }
+            }
             // LD Vx, [I]
-            0x65 => todo!(),
-            _ => return Err(format!("Unknow Instruction: 8xy{}", instruction)),
+            0x65 => {
+                for i in 0..=vx {
+                    self.registers[i] = self.mem[i + self.i as usize];
+                }
+            }
+            _ => return Err(format!("Unknow Instruction: {:X}", self.opcode)),
         };
         Ok(())
     }

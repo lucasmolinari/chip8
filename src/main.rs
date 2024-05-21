@@ -18,10 +18,10 @@ pub fn main() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {}
     let path = args.get(1).ok_or("Expected a file path")?;
-    let pb = Path::new(path).canonicalize().map_err(|e| e.to_string())?;
+    let rom = Path::new(path).canonicalize().map_err(|e| e.to_string())?;
 
     let mut chip8 = Chip8::new();
-    chip8.load(pb)?;
+    chip8.load(rom)?;
 
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;

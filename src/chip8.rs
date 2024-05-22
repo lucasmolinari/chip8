@@ -58,6 +58,15 @@ impl Chip8 {
 
         chip
     }
+    pub fn tick(&mut self) -> Result<(), String> {
+        self.fetch()?;
+        self.execute()?;
+        Ok(())
+    }
+
+    pub fn keypress(&mut self, i: usize, pressed: u8) {
+        self.keys[i] = pressed;
+    }
 
     pub fn get_display(&self) -> &[u8; 64 * 32] {
         &self.display
@@ -244,14 +253,20 @@ impl Chip8 {
             // LD Vx, DT
             0x07 => self.registers[vx] = self.dt,
             // LD Vx, K
-            0x0A => loop {
+            0x0A => {
+                let mut pressed = false;
                 for key in self.keys {
                     if key != 0 {
                         self.registers[vx] = key;
+                        pressed = true;
                         break;
                     }
                 }
-            },
+                if !pressed {
+                    self.decrement_pc();
+                }
+            }
+
             // LD DT, Vx
             0x15 => self.dt = self.registers[vx],
             // LD ST, Vx
@@ -325,5 +340,9 @@ impl Chip8 {
 
     fn increment_pc(&mut self) {
         self.pc += 2
+    }
+
+    fn decrement_pc(&mut self) {
+        self.pc -= 2
     }
 }

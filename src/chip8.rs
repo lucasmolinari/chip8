@@ -206,14 +206,17 @@ impl Chip8 {
             // OR Vx Vy
             0x1 => {
                 self.registers[vx] |= self.registers[vy];
+                self.registers[FLAG] = 0;
             }
             // AND Vx Vy
             0x2 => {
                 self.registers[vx] &= self.registers[vy];
+                self.registers[FLAG] = 0;
             }
             // XOR Vx Vy
             0x3 => {
                 self.registers[vx] ^= self.registers[vy];
+                self.registers[FLAG] = 0;
             }
             // ADD Vx Vy
             0x4 => {
@@ -223,23 +226,23 @@ impl Chip8 {
             }
             // SUB Vx, Vy
             0x5 => {
-                self.registers[FLAG] = (x > y) as u8;
                 self.registers[vx] = x.wrapping_sub(y);
+                self.registers[FLAG] = (x >= y) as u8;
             }
             // SHR Vx {, Vy}
             0x6 => {
-                self.registers[FLAG] = x & 1; // lsb
                 self.registers[vx] >>= 1;
+                self.registers[FLAG] = x & 1; // lsb
             }
             // SUBN Vx, Vy
             0x7 => {
-                self.registers[FLAG] = (y > x) as u8;
                 self.registers[vx] = y.wrapping_sub(x);
+                self.registers[FLAG] = (y >= x) as u8;
             }
             // SHL Vx {, Vy}
             0xE => {
-                self.registers[FLAG] = (x >> 7) & 1; // msb
                 self.registers[vx] <<= 1;
+                self.registers[FLAG] = (x >> 7) & 1; // msb
             }
             _ => return Err(format!("Unknow Instruction: {:X}", self.opcode)),
         }
@@ -286,12 +289,14 @@ impl Chip8 {
                 for i in 0..=vx {
                     self.mem[i + self.i as usize] = self.registers[i];
                 }
+                // self.i += vx as u16 + 1; TODO: Toggle legacy mode
             }
             // LD Vx, [I]
             0x65 => {
                 for i in 0..=vx {
                     self.registers[i] = self.mem[i + self.i as usize];
                 }
+                // self.i += vx as u16 + 1; TODO: Toggle legacy mode
             }
             _ => return Err(format!("Unknow Instruction: {:X}", self.opcode)),
         };

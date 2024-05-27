@@ -34,10 +34,10 @@ pub struct Chip8 {
     st: u8,      // Sound Timer
     sp: u16,     // Stack Pointer
     mem: [u8; 4096],
-    display: [u8; 64 * 32],
     registers: [u8; 16],
     stack: [u16; 16],
     keys: [u8; 16],
+    pub display: [u8; 64 * 32],
 }
 impl Chip8 {
     pub fn new() -> Self {
@@ -49,10 +49,10 @@ impl Chip8 {
             st: 0,
             sp: 0,
             mem: [0; 4096],
-            display: [0; 64 * 32],
             registers: [0; 16],
             stack: [0; 16],
             keys: [0; 16],
+            display: [0; 64 * 32],
         };
         chip.mem[..80].copy_from_slice(&FONTSET);
 
@@ -66,10 +66,6 @@ impl Chip8 {
 
     pub fn keypress(&mut self, i: usize, pressed: u8) {
         self.keys[i] = pressed;
-    }
-
-    pub fn get_display(&self) -> &[u8; 64 * 32] {
-        &self.display
     }
 
     pub fn load(&mut self, path: PathBuf) -> Result<(), String> {
